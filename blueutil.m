@@ -72,6 +72,7 @@ void usage(FILE *io) {
 	io_puts(io, "    -d, --discoverable        output discoverable state as 1 or 0");
 	io_puts(io, "    -d, --discoverable STATE  set discoverable state");
 	io_puts(io, "");
+	io_puts(io, "        --alfred              list paired devices as json for alfred workflow");
 	io_puts(io, "        --favourites          list favourite devices");
 	io_puts(io, "        --inquiry [T]         inquiry devices in range, 10 seconds duration by default excluding time for name updates");
 	io_puts(io, "        --paired              list paired devices");
@@ -81,6 +82,7 @@ void usage(FILE *io) {
 	io_puts(io, "        --is-connected ADDR   device with address connected state as 1 or 0");
 	io_puts(io, "        --connect ADDR        create a connection to device with address");
 	io_puts(io, "        --disconnect ADDR     close the connection to device with address");
+	io_puts(io, "        --reconnect ADDR      close and recreate the connection to device with address");
 	io_puts(io, "");
 	io_puts(io, "    -h, --help                this help");
 	io_puts(io, "    -v, --version             show version");
@@ -202,6 +204,67 @@ void list_devices(NSArray *devices) {
 	}
 }
 
+void BTPairedAsJson() {
+	printf("{\"items\": [\n");
+	for (IOBluetoothDevice *device in [IOBluetoothDevice pairedDevices]) {
+		if (device) {
+			__auto_type const addressString = device.addressString;
+			__auto_type const deviceName = device.name;
+			printf("\t{\t\"uid\": \"%s\",\n", [addressString UTF8String]);
+			if (device.isConnected) {
+				printf("\t\t\"title\": \"%s\",\n", [deviceName UTF8String]);
+				printf("\t\t\"subtitle\": \"Reconnect\",\n");
+				printf("\t\t\"arg\": \"--reconnect %s\",\n", [addressString UTF8String]);
+				printf("\t\t\"icon\": {\"path\": \"./_pactive.icns\"},\n");
+				printf("\t\t\"mods\":{\"alt\": {\n");
+				printf("\t\t\"subtitle\": \"Disconnect\",\n");
+				printf("\t\t\"arg\": \"--disconnect %s\",\n", [addressString UTF8String]);
+				printf("\t\t\"icon\": {\"path\": \"./_pinactive.icns\"},\n");
+
+				printf("\t\t},},\n");
+			} else {
+				printf("\t\t\"title\": \"%s\",\n", [deviceName UTF8String]);
+				printf("\t\t\"arg\": \"--connect %s\",\n", [addressString UTF8String]);
+				printf("\t\t\"subtitle\": \"Connect\",\n");
+				printf("\t\t\"icon\": {\"path\": \"./_pinactive.icns\"},\n");
+				printf("\t\t\"mods\":{\"alt\": {\n");
+				printf("\t\t\"arg\": \"--connect %s\",\n", [addressString UTF8String]);
+				printf("\t\t\"subtitle\": \"Connect\",\n");
+				printf("\t\t},},\n");
+			}
+			printf("\t},\n");
+		}
+	}
+	printf("\t{\t\"uid\": \"power\",\n");
+	if (BTPowerState()) {
+		printf("\t\t\"title\": \"%s\",\n", "Turn Bluetooth Off");
+		printf("\t\t\"arg\": \"%s\",\n", "--power 0");
+		printf("\t\t\"subtitle\": \"\",\n");
+		printf("\t\t\"icon\": {\"path\": \"./_active.icns\"}\n");
+	} else {
+		printf("\t\t\"title\": \"%s\",\n", "Turn Bluetooth On");
+		printf("\t\t\"arg\": \"%s\",\n", "--power 1");
+		printf("\t\t\"subtitle\": \"\",\n");
+		printf("\t\t\"icon\": {\"path\": \"./_inactive.icns\"}\n");
+	}
+	printf("\t},\n");
+	// printf("\t{\t\"uid\": \"discoverable\",\n");
+	// if (BTDiscoverableState()) {
+	//     printf("\t\t\"title\": \"%s\",\n", "Turn Discoverable Off");
+	//     printf("\t\t\"arg\": \"%s\",\n", "--discoverable 0");
+	//     printf("\t\t\"subtitle\": \"\",\n");
+	//     printf("\t\t\"icon\": {\"path\": \"./_discon.icns\"}\n");
+	// } else {
+	//     printf("\t\t\"title\": \"%s\",\n", "Turn Discoverable On");
+	//     printf("\t\t\"arg\": \"%s\",\n", "--discoverable 1");
+	//     printf("\t\t\"subtitle\": \"\",\n");
+	//     printf("\t\t\"icon\": {\"path\": \"./_discoff.icns\"}\n");
+	// }
+	// printf("\t},\n");
+
+	printf("]}\n");
+}
+
 @interface DeviceInquiryRunLoopStopper : NSObject <IOBluetoothDeviceInquiryDelegate>
 @end
 @implementation DeviceInquiryRunLoopStopper
@@ -227,6 +290,7 @@ int main(int argc, char *argv[]) {
 		{"discoverable",    optional_argument, NULL, 'd'},
 
 		{"favourites",      no_argument,       NULL, 'F'},
+		{"alfred",          no_argument,       NULL, 'A'},
 		{"inquiry",         optional_argument, NULL, 'I'},
 		{"paired",          no_argument,       NULL, 'P'},
 		{"recent",          optional_argument, NULL, 'R'},
@@ -234,6 +298,7 @@ int main(int argc, char *argv[]) {
 		{"info",            required_argument, NULL, 'i'},
 		{"is-connected",    required_argument, NULL, 'c'},
 		{"connect",         required_argument, NULL, '1'},
+		{"reconnect",       required_argument, NULL, '2'},
 		{"disconnect",      required_argument, NULL, '0'},
 
 		{"help",            no_argument,       NULL, 'h'},
@@ -255,6 +320,7 @@ int main(int argc, char *argv[]) {
 
 				break;
 			case 'F':
+			case 'A':
 			case 'P':
 				break;
 			case 'I':
@@ -270,6 +336,7 @@ int main(int argc, char *argv[]) {
 			case 'i':
 			case 'c':
 			case '1':
+			case '2':
 			case '0':
 				if (!check_device_address_arg(optarg)) {
 					fprintf(stderr, "Unexpected address: %s\n", optarg);
@@ -325,6 +392,10 @@ int main(int argc, char *argv[]) {
 				}
 
 				break;
+			case 'A':
+				BTPairedAsJson();
+
+				break;
 			case 'F':
 				list_devices([IOBluetoothDevice favoriteDevices]);
 
@@ -367,7 +438,16 @@ int main(int argc, char *argv[]) {
 				printf("%d\n", [get_device(optarg) isConnected] ? 1 : 0);
 
 				break;
+			case '2':
+				if (!BTPowerState()) BTSetPowerState(1);
+				if ([get_device(optarg) closeConnection] != kIOReturnSuccess
+					|| [get_device(optarg) openConnection] != kIOReturnSuccess)
+				return EXIT_FAILURE;
+
+				break;
+
 			case '1':
+				if (!BTPowerState()) BTSetPowerState(1);
 				if ([get_device(optarg) openConnection] != kIOReturnSuccess) return EXIT_FAILURE;
 
 				break;
